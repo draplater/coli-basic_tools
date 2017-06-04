@@ -1,3 +1,9 @@
+from io import open
+
+import graph_utils
+from conll_reader import OldSDPSentence
+
+
 def set_proc_name(newname):
     from ctypes import cdll, byref, create_string_buffer
     libc = cdll.LoadLibrary('libc.so.6')
@@ -19,3 +25,10 @@ def parse_dict(parser, dic):
             option_cmd.append(str(v))
 
     return parser.parse_args(option_cmd)
+
+
+def get_graphs(file_name):
+    with open(file_name, "r") as f:
+        graphs = [graph_utils.Graph.from_sdp(i)
+                  for i in OldSDPSentence.get_all_sentences(f)]
+    return graphs
