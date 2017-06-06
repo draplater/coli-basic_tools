@@ -10,7 +10,7 @@ class Beam(object):
 
     def push(self, x):
         key = self.key(x)
-        if not self.full():
+        if len(self.beam) < self.maxsize:
             heapq.heappush(self.beam, (key, x))
         else:
             worst_score, worst_state = self.beam[0]
