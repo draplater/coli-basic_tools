@@ -3,7 +3,7 @@ import logging
 import sys
 
 logFormatter = logging.Formatter(
-    "%(asctime)s [%(levelname)-5.5s] [%(filename)s:%(lineno)s - %(funcName)s] %(message)s")
+    "%(asctime)s [%(levelname)-5.5s] [%(name)s:%(filename)s:%(lineno)s - %(funcName)s] %(message)s")
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
