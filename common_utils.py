@@ -27,8 +27,8 @@ def parse_dict(parser, dic):
     return parser.parse_args(option_cmd)
 
 
-def get_graphs(file_name):
+def get_graphs(file_name, use_edge=True):
     with open(file_name, "r") as f:
-        graphs = [graph_utils.Graph.from_sdp(i)
+        graphs = [graph_utils.Graph.from_sdp(i, use_edge)
                   for i in OldSDPSentence.get_all_sentences(f)]
     return graphs
