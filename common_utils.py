@@ -22,7 +22,10 @@ def parse_dict(parser, dic):
             continue
         else:
             option_cmd.append("--" + k)
-            option_cmd.append(str(v))
+            if isinstance(v, list):
+                option_cmd.append(",".join(str(i) for i in v))
+            else:
+                option_cmd.append(str(v))
 
     return parser.parse_args(option_cmd)
 
