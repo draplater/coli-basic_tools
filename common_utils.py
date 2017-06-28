@@ -1,4 +1,8 @@
+import functools
+import warnings
 from io import open
+from optparse import OptionParser
+from argparse import ArgumentParser
 
 import graph_utils
 from conll_reader import OldSDPSentence
@@ -12,8 +16,8 @@ def set_proc_name(newname):
     libc.prctl(15, byref(buff), 0, 0, 0)
 
 
-def parse_dict(parser, dic):
-    option_cmd = []
+def parse_dict(parser, dic, prefix=()):
+    option_cmd = list(prefix)
     for k, v in dic.items():
         assert isinstance(k, str)
         if v is True:
@@ -23,15 +27,57 @@ def parse_dict(parser, dic):
         else:
             option_cmd.append("--" + k)
             if isinstance(v, list):
-                option_cmd.append(",".join(str(i) for i in v))
+                if isinstance(parser, OptionParser):
+                    option_cmd.append(",".join(str(i) for i in v))
+                else:
+                    assert isinstance(parser, ArgumentParser)
+                    option_cmd.extend(v)
             else:
                 option_cmd.append(str(v))
 
     return parser.parse_args(option_cmd)
 
 
+
+def deprecated(func):
+    """This is a decorator which can be used to mark functions
+    as deprecated. It will result in a warning being emmitted
+    when the function is used."""
+
+    @functools.wraps(func)
+    def new_func(*args, **kwargs):
+        warnings.simplefilter('always', DeprecationWarning) #turn off filter
+        warnings.warn("Call to deprecated function {}.".format(func.__name__), category=DeprecationWarning, stacklevel=2)
+        warnings.simplefilter('default', DeprecationWarning) #reset filter
+        return func(*args, **kwargs)
+
+    return new_func
+
+@deprecated
 def get_graphs(file_name, use_edge=True):
     with open(file_name, "r") as f:
         graphs = [graph_utils.Graph.from_sdp(i, use_edge)
                   for i in OldSDPSentence.get_all_sentences(f)]
     return graphs
+
+
+def add_common_arguments(parser):
+    parser.add_argument("--dynet-seed", type=int, dest="seed", default=0)
+    parser.add_argument("--dynet-mem", type=int, dest="mem", default=0)
+    parser.add_argument("--dynet-l2", type=float, dest="l2", default=0.0)
+    parser.add_argument("--dynet-weight-decay", type=float, dest="weight_decay", default=0.0)
+
+
+def add_train_arguments(parser):
+    parser.add_argument("--title", type=str, dest="title", default="default")
+    parser.add_argument("--train", dest="conll_train", help="Annotated CONLL train file", metavar="FILE")
+    parser.add_argument("--dev", dest="conll_dev", help="Annotated CONLL dev file", metavar="FILE", nargs="+")
+    parser.add_argument("--outdir", type=str, dest="output", default="results")
+    parser.add_argument("--max-save", type=int, dest="max_save", default=2)
+    parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", default="model.")
+
+
+def add_predict_arguments(parser):
+    parser.add_argument("--output", type=str, dest="out_file", required=True)
+    parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", required=True)
+    parser.add_argument("--test", dest="conll_test", help="Annotated CONLL test file", metavar="FILE", required=True)
