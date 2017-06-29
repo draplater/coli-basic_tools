@@ -1,11 +1,7 @@
 import functools
 import warnings
-from io import open
-from optparse import OptionParser
 from argparse import ArgumentParser
-
-import graph_utils
-from conll_reader import OldSDPSentence
+from optparse import OptionParser
 
 
 def set_proc_name(newname):
@@ -52,13 +48,6 @@ def deprecated(func):
         return func(*args, **kwargs)
 
     return new_func
-
-@deprecated
-def get_graphs(file_name, use_edge=True):
-    with open(file_name, "r") as f:
-        graphs = [graph_utils.Graph.from_sdp(i, use_edge)
-                  for i in OldSDPSentence.get_all_sentences(f)]
-    return graphs
 
 
 def add_common_arguments(parser):
