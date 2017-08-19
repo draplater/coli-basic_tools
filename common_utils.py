@@ -59,9 +59,9 @@ def add_common_arguments(parser):
 
 def add_train_arguments(parser):
     parser.add_argument("--title", type=str, dest="title", default="default")
-    parser.add_argument("--train", dest="conll_train", help="Annotated CONLL train file", metavar="FILE")
-    parser.add_argument("--dev", dest="conll_dev", help="Annotated CONLL dev file", metavar="FILE", nargs="+")
-    parser.add_argument("--outdir", type=str, dest="output", default="results")
+    parser.add_argument("--train", dest="conll_train", help="Annotated CONLL train file", metavar="FILE", required=True)
+    parser.add_argument("--dev", dest="conll_dev", help="Annotated CONLL dev file", metavar="FILE", nargs="+", required=True)
+    parser.add_argument("--outdir", type=str, dest="output", required=True)
     parser.add_argument("--max-save", type=int, dest="max_save", default=2)
     parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", default="model.")
 
