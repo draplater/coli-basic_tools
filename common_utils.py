@@ -50,6 +50,19 @@ def deprecated(func):
     return new_func
 
 
+def under_construction(func):
+    """This is a decorator which can be used to mark functions
+    as under construction. It will result in a warning being emmitted
+    when the function is used."""
+
+    @functools.wraps(func)
+    def new_func(*args, **kwargs):
+        warnings.warn("Call to under construction function {}.".format(func.__name__), category=UserWarning, stacklevel=2)
+        return func(*args, **kwargs)
+
+    return new_func
+
+
 def add_common_arguments(parser):
     parser.add_argument("--dynet-seed", type=int, dest="seed", default=0)
     parser.add_argument("--dynet-mem", type=int, dest="mem", default=0)
