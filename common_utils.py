@@ -3,6 +3,8 @@ import warnings
 from argparse import ArgumentParser
 from optparse import OptionParser
 
+import os
+
 
 def set_proc_name(newname):
     from ctypes import cdll, byref, create_string_buffer
@@ -10,6 +12,14 @@ def set_proc_name(newname):
     buff = create_string_buffer(len(newname)+1)
     buff.value = newname
     libc.prctl(15, byref(buff), 0, 0, 0)
+
+
+def ensure_dir(directory):
+    try:
+        os.makedirs(directory)
+    except OSError as err:
+        if err.errno!=17:
+            raise
 
 
 def parse_dict(parser, dic, prefix=()):
