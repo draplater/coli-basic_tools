@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from optparse import OptionParser
 
 import os
+import time
 
 
 def set_proc_name(newname):
@@ -93,3 +94,13 @@ def add_predict_arguments(parser):
     parser.add_argument("--output", type=str, dest="out_file", required=True)
     parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", required=True)
     parser.add_argument("--test", dest="conll_test", help="Annotated CONLL test file", metavar="FILE", required=True)
+
+
+class Timer(object):
+    def __init__(self):
+        self.time = time.time()
+
+    def tick(self):
+        oldtime = self.time
+        self.time = time.time()
+        return self.time - oldtime
