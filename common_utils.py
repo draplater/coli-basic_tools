@@ -3,6 +3,9 @@ import warnings
 from argparse import ArgumentParser
 from optparse import OptionParser
 
+import os
+import time
+
 
 def set_proc_name(newname):
     from ctypes import cdll, byref, create_string_buffer
@@ -10,6 +13,14 @@ def set_proc_name(newname):
     buff = create_string_buffer(len(newname)+1)
     buff.value = newname.encode("utf-8")
     libc.prctl(15, byref(buff), 0, 0, 0)
+
+
+def ensure_dir(directory):
+    try:
+        os.makedirs(directory)
+    except OSError as err:
+        if err.errno!=17:
+            raise
 
 
 def parse_dict(parser, dic, prefix=()):
@@ -50,6 +61,19 @@ def deprecated(func):
     return new_func
 
 
+def under_construction(func):
+    """This is a decorator which can be used to mark functions
+    as under construction. It will result in a warning being emmitted
+    when the function is used."""
+
+    @functools.wraps(func)
+    def new_func(*args, **kwargs):
+        warnings.warn("Call to under construction function {}.".format(func.__name__), category=UserWarning, stacklevel=2)
+        return func(*args, **kwargs)
+
+    return new_func
+
+
 def add_common_arguments(parser):
     parser.add_argument("--dynet-seed", type=int, dest="seed", default=0)
     parser.add_argument("--dynet-mem", type=int, dest="mem", default=0)
@@ -70,3 +94,16 @@ def add_predict_arguments(parser):
     parser.add_argument("--output", type=str, dest="out_file", required=True)
     parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", required=True)
     parser.add_argument("--test", dest="conll_test", help="Annotated CONLL test file", metavar="FILE", required=True)
+
+
+def add_train_and_predict_arguments(parser):
+    parser.add_argument("--output-scores", action="store_true", dest="output_scores", default=False)
+
+class Timer(object):
+    def __init__(self):
+        self.time = time.time()
+
+    def tick(self):
+        oldtime = self.time
+        self.time = time.time()
+        return self.time - oldtime
