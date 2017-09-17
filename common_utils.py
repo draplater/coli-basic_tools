@@ -96,6 +96,9 @@ def add_predict_arguments(parser):
     parser.add_argument("--test", dest="conll_test", help="Annotated CONLL test file", metavar="FILE", required=True)
 
 
+def add_train_and_predict_arguments(parser):
+    parser.add_argument("--output-scores", action="store_true", dest="output_scores", default=False)
+
 class Timer(object):
     def __init__(self):
         self.time = time.time()
