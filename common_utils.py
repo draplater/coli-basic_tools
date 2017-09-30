@@ -38,7 +38,7 @@ def parse_dict(parser, dic, prefix=()):
                     option_cmd.append(",".join(str(i) for i in v))
                 else:
                     assert isinstance(parser, ArgumentParser)
-                    option_cmd.extend(v)
+                    option_cmd.extend(str(i) for i in v)
             else:
                 option_cmd.append(str(v))
 
