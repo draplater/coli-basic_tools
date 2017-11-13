@@ -94,6 +94,7 @@ def add_predict_arguments(parser):
     parser.add_argument("--output", type=str, dest="out_file", required=True)
     parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", required=True)
     parser.add_argument("--test", dest="conll_test", help="Annotated CONLL test file", metavar="FILE", required=True)
+    parser.add_argument("--eval", action="store_true", dest="evaluate", default=False)
 
 
 def add_train_and_predict_arguments(parser):
