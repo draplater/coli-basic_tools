@@ -1,3 +1,5 @@
+from io import open
+import contextlib
 import functools
 import warnings
 from argparse import ArgumentParser
@@ -5,6 +7,8 @@ from optparse import OptionParser
 
 import os
 import time
+
+import sys
 
 
 def set_proc_name(newname):
@@ -91,10 +95,19 @@ def add_train_arguments(parser):
 
 
 def add_predict_arguments(parser):
-    parser.add_argument("--output", type=str, dest="out_file", required=True)
+    parser.add_argument("--output", dest="out_file", help="Output file", metavar="FILE", required=True)
     parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", required=True)
     parser.add_argument("--test", dest="conll_test", help="Annotated CONLL test file", metavar="FILE", required=True)
     parser.add_argument("--eval", action="store_true", dest="evaluate", default=False)
+    parser.add_argument("--format", dest="input_format", choices=["standard", "tokenlist", "space", "english"],
+                        help='Input format. (default)"standard": use the same format of treebank;\n'
+                             'tokenlist: like [[(sent_1_word1, sent_1_pos1), ...], [...]];\n'
+                             'space: sentence is separated by newlines, and words are separated by space;'
+                             'no POSTag info will be used. \n'
+                             'english: raw english sentence that will be processed by NLTK tokenizer, '
+                             'no POSTag info will be used.',
+                        default="standard"
+                        )
 
 
 def add_train_and_predict_arguments(parser):
@@ -108,3 +121,22 @@ class Timer(object):
         oldtime = self.time
         self.time = time.time()
         return self.time - oldtime
+
+
+@contextlib.contextmanager
+def smart_open(filename, mode="r", *args, **kwargs):
+    if filename != '-':
+        fh = open(filename, mode, *args, **kwargs)
+    else:
+        if mode.startswith("r"):
+            fh = sys.stdin
+        elif mode.startswith("w") or mode.startswith("a"):
+            fh  = sys.stdout
+        else:
+            raise ValueError("invalid mode " + mode)
+
+    try:
+        yield fh
+    finally:
+        if fh is not sys.stdout and fh is not sys.stdin:
+            fh.close()
