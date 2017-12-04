@@ -27,29 +27,6 @@ def ensure_dir(directory):
             raise
 
 
-def parse_dict(parser, dic, prefix=()):
-    option_cmd = list(prefix)
-    for k, v in dic.items():
-        assert isinstance(k, str)
-        if v is True:
-            option_cmd.append("--" + k)
-        elif v is False:
-            continue
-        else:
-            option_cmd.append("--" + k)
-            if isinstance(v, list):
-                if isinstance(parser, OptionParser):
-                    option_cmd.append(",".join(str(i) for i in v))
-                else:
-                    assert isinstance(parser, ArgumentParser)
-                    option_cmd.extend(str(i) for i in v)
-            else:
-                option_cmd.append(str(v))
-
-    return parser.parse_args(option_cmd)
-
-
-
 def deprecated(func):
     """This is a decorator which can be used to mark functions
     as deprecated. It will result in a warning being emmitted
@@ -63,6 +40,12 @@ def deprecated(func):
         return func(*args, **kwargs)
 
     return new_func
+
+
+@deprecated
+def parse_dict(parser, dic, prefix=()):
+    from training_scheduler import dict_to_commandline
+    return parser.parse_args(dict_to_commandline(dic, prefix))
 
 
 def under_construction(func):
