@@ -61,41 +61,6 @@ def under_construction(func):
     return new_func
 
 
-def add_common_arguments(parser):
-    parser.add_argument("--dynet-seed", type=int, dest="seed", default=0)
-    parser.add_argument("--dynet-mem", type=int, dest="mem", default=0)
-    parser.add_argument("--dynet-l2", type=float, dest="l2", default=0.0)
-    parser.add_argument("--dynet-weight-decay", type=float, dest="weight_decay", default=0.0)
-
-
-def add_train_arguments(parser):
-    parser.add_argument("--title", type=str, dest="title", default="default")
-    parser.add_argument("--train", dest="conll_train", help="Annotated CONLL train file", metavar="FILE", required=True)
-    parser.add_argument("--dev", dest="conll_dev", help="Annotated CONLL dev file", metavar="FILE", nargs="+", required=True)
-    parser.add_argument("--outdir", type=str, dest="output", required=True)
-    parser.add_argument("--max-save", type=int, dest="max_save", default=2)
-    parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", default="model.")
-
-
-def add_predict_arguments(parser):
-    parser.add_argument("--output", dest="out_file", help="Output file", metavar="FILE", required=True)
-    parser.add_argument("--model", dest="model", help="Load/Save model file", metavar="FILE", required=True)
-    parser.add_argument("--test", dest="conll_test", help="Annotated CONLL test file", metavar="FILE", required=True)
-    parser.add_argument("--eval", action="store_true", dest="evaluate", default=False)
-    parser.add_argument("--format", dest="input_format", choices=["standard", "tokenlist", "space", "english"],
-                        help='Input format. (default)"standard": use the same format of treebank;\n'
-                             'tokenlist: like [[(sent_1_word1, sent_1_pos1), ...], [...]];\n'
-                             'space: sentence is separated by newlines, and words are separated by space;'
-                             'no POSTag info will be used. \n'
-                             'english: raw english sentence that will be processed by NLTK tokenizer, '
-                             'no POSTag info will be used.',
-                        default="standard"
-                        )
-
-
-def add_train_and_predict_arguments(parser):
-    parser.add_argument("--output-scores", action="store_true", dest="output_scores", default=False)
-
 class Timer(object):
     def __init__(self):
         self.time = time.time()
