@@ -10,6 +10,8 @@ import time
 
 import sys
 
+from itertools import islice
+
 
 def set_proc_name(newname):
     from ctypes import cdll, byref, create_string_buffer
@@ -88,6 +90,20 @@ def smart_open(filename, mode="r", *args, **kwargs):
     finally:
         if fh is not sys.stdout and fh is not sys.stdin:
             fh.close()
+
+
+def split_to_batches(iterable, batch_size):
+    iterator = iter(iterable)
+    sent_id = 0
+    batch_id = 0
+
+    while True:
+        piece = list(islice(iterator, batch_size))
+        if not piece:
+            break
+        yield sent_id, batch_id, piece
+        sent_id += len(piece)
+        batch_id += 1
 
 
 class AttrDict(dict):
