@@ -133,3 +133,7 @@ class AttrDict(dict):
             return self[name]
         except KeyError:
             raise AttributeError(name)
+
+    @property
+    def __dict__(self):
+        return self
