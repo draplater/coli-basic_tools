@@ -137,3 +137,28 @@ class AttrDict(dict):
     @property
     def __dict__(self):
         return self
+
+
+class IdentityDict(object):
+    """ A dict like IdentityHashMap in java"""
+    def __init__(self, seq=None):
+        self.dict = dict(seq=((id(key), value) for key, value in seq))
+
+    def __setitem__(self, key, value):
+        self.dict[id(key)] = value
+
+    def __getitem__(self, item):
+        return self.dict[id(item)]
+
+    def get(self, key, default=None):
+        return self.dict.get(id(key), default)
+
+    def __str__(self):
+        return str(self.dict)
+
+    def __repr__(self):
+        return repr(self.dict)
+
+    def __getstate__(self):
+        raise NotImplementedError("Cannot pickle this.")
+
