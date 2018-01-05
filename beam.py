@@ -26,8 +26,14 @@ class Beam(object):
     def empty(self):
         return not len(self.beam)
 
+    def clear(self):
+        self.beam.clear()
+
     def __iter__(self):
         return iter(i[1] for i in self.beam)
 
     def __getitem__(self, item):
         return self.beam[item][1]
+
+    def best_item(self):
+        return sorted(self.beam, reverse=True)[0][1]
