@@ -1,5 +1,6 @@
 import argparse
 import gzip
+import pickle
 from io import open
 import contextlib
 import functools
@@ -13,6 +14,8 @@ import time
 import sys
 
 from itertools import islice
+
+from logger import logger
 
 
 def set_proc_name(newname):
@@ -253,3 +256,26 @@ def read_embedding(embedding_filename, encoding):
     external_embedding = list(embedding_gen())
     external_embedding_fp.close()
     return external_embedding
+
+
+def cache_result_to(file_name_func):
+    def wrapper(func):
+        @functools.wraps(func)
+        def wrapped(*args, **kwargs):
+            file_name = file_name_func(*args, **kwargs)
+            if os.path.exists(file_name):
+                with open(file_name, "rb") as f:
+                    logger.info("Use cached file: {}".format(file_name))
+                    return pickle.load(f)
+            else:
+                result = func(*args, **kwargs)
+                with open(file_name, "wb") as f:
+                    pickle.dump(result, f)
+                    logger.info("Cached file generated: {}".format(file_name))
+                return result
+        return wrapped
+    return wrapper
+
+
+def cache_result(file_name):
+    return cache_result_to(lambda *args, **kwargs: file_name)
