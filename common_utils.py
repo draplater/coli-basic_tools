@@ -293,7 +293,7 @@ class Progbar(object):
         interval: Minimum visual progress update interval (in seconds).
     """
 
-    def __init__(self, target, width=30, verbose=1):
+    def __init__(self, target, width=30, verbose=1, log_func=None):
         self.width = width
         self.target = target
         self.sum_values = {}
@@ -302,6 +302,7 @@ class Progbar(object):
         self.total_width = 0
         self.seen_so_far = 0
         self.verbose = verbose
+        self.log_func = log_func
 
     def update(self, current, values=(), exact=(), strict=()):
         """
@@ -331,6 +332,16 @@ class Progbar(object):
             if k not in self.sum_values:
                 self.unique_values.append(k)
             self.sum_values[k] = v
+
+        if self.log_func is not None:
+            log_string = "Step: {}/{} ".format(current, self.target)
+            if values:
+                log_string += " values: {}".format(values)
+            if exact:
+                log_string += " exact: {}".format(exact)
+            if strict:
+                log_string += " strict: {}".format(strict)
+            self.log_func(log_string)
 
         self.seen_so_far = current
 
@@ -390,6 +401,9 @@ class Progbar(object):
                     info += ' - %s: %.4f' % (k,
                         self.sum_values[k][0] / max(1, self.sum_values[k][1]))
                 sys.stdout.write(info + "\n")
+
+    def finish(self):
+        sys.stdout.write("\n")
 
     def add(self, n, values=()):
         self.update(self.seen_so_far+n, values)
