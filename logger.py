@@ -23,7 +23,9 @@ def get_logger(*, files=(), log_to_console=True,
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(logFormatter)
         this_logger.addHandler(console_handler)
-    if isinstance(files, str):
+    if files is None:
+        pass
+    elif isinstance(files, str):
         add_log_file(this_logger, files)
     else:
         assert isinstance(files, (list, tuple))
@@ -36,7 +38,7 @@ def get_logger(*, files=(), log_to_console=True,
 
 # old style: global logger
 
-logger = get_logger()
+default_logger = logger = get_logger()
 
 
 def log_to_file(path):
