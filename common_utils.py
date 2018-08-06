@@ -16,7 +16,9 @@ import sys
 
 from itertools import islice
 
+import dataclasses
 import numpy as np
+from dataclasses import is_dataclass
 
 from logger import logger
 
@@ -178,7 +180,8 @@ class IdentityDict(object):
 def dict_key_action_factory(choices):
     class DictKeyAction(argparse.Action):
         def __call__(self, parser, namespace, values, option_string=None):
-            setattr(namespace, self.dest, choices[values])
+            # noinspection PyUnresolvedReferences
+            setattr(namespace, self.dest, dataclasses.replace(choices[values]))
 
     return DictKeyAction
 
@@ -188,15 +191,30 @@ class DictionarySubParser(argparse._ArgumentGroup):
                  title=None,
                  description=None,
                  default_key="default"):
+        for i in choices.values():
+            assert is_dataclass(i)
         super(DictionarySubParser, self).__init__(
             original_parser, title=title, description=description)
         self.sub_namespace = sub_namespace
         self.original_parser = original_parser
+        default_obj = choices[default_key]
         self.original_parser.add_argument("--" + self.sub_namespace,
                                           action=dict_key_action_factory(choices),
                                           choices=choices.keys(),
-                                          default=choices[default_key]
+                                          default=default_obj
                                           )
+        params_dict = dataclasses.asdict(default_obj)
+        for key, value in params_dict.items():
+            default_list = " (default: {}".format(value)
+            for choice_key, choice_dict in choices.items():
+                alt_value = getattr(choice_dict, key)
+                if alt_value != value:
+                    default_list += ", {}: {}".format(choice_key, alt_value)
+            default_list += ")"
+            self.add_argument("--" + key.replace("_", "-"), type=value.__class__,
+                              help=default_obj.__annotations__.get(key) + default_list,
+                              choices=default_obj.__dataclass_fields__[key].metadata.get("choices")
+                              )
 
     def add_argument(self, *args, **kwargs):
         def modify_names(name):
