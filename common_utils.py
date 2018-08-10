@@ -1,7 +1,7 @@
 import argparse
 import gzip
 import pickle
-from collections import UserDict
+from collections import UserDict, OrderedDict
 from io import open
 import contextlib
 import functools
@@ -186,8 +186,20 @@ def dict_key_action_factory(choices):
     return DictKeyAction
 
 
+def dataclasses_trace_origin(klass, result_container=None):
+    if result_container is None:
+        result_container = OrderedDict()
+    if not dataclasses.is_dataclass(klass):
+        return result_container
+    for var in klass.__dataclass_fields__:
+        result_container[var] = klass
+    for base in klass.__bases__:
+        dataclasses_trace_origin(base, result_container)
+    return result_container
+
+
 class DictionarySubParser(argparse._ArgumentGroup):
-    def __init__(self, sub_namespace, original_parser, choices,
+    def __init__(self, sub_namespace, original_parser, choices=None,
                  title=None,
                  description=None,
                  default_key="default"):
@@ -198,25 +210,44 @@ class DictionarySubParser(argparse._ArgumentGroup):
         self.sub_namespace = sub_namespace
         self.original_parser = original_parser
         default_obj = choices[default_key]
-        self.original_parser.add_argument("--" + self.sub_namespace,
-                                          action=dict_key_action_factory(choices),
-                                          choices=choices.keys(),
-                                          default=default_obj
-                                          )
+        if choices is not None:
+            self.original_parser.add_argument("--" + self.sub_namespace,
+                                              action=dict_key_action_factory(choices),
+                                              choices=choices.keys(),
+                                              default=default_obj
+                                              )
         params_dict = dataclasses.asdict(default_obj)
+        origin_class_map = dataclasses_trace_origin(default_obj.__class__)
+        # docs
+        class_to_groups = {i: original_parser.add_argument_group(title=i.__qualname__)
+                           for i in set(origin_class_map.values())}
         for key, value in params_dict.items():
+            # TODO: resursive dataclasses
+            # if dataclasses.is_dataclass(value):
+            #     DictionarySubParser(self.sub_namespace + "." + key, self)
+            # else:
             default_list = " (default: {}".format(value)
             for choice_key, choice_dict in choices.items():
                 alt_value = getattr(choice_dict, key)
                 if alt_value != value:
                     default_list += ", {}: {}".format(choice_key, alt_value)
             default_list += ")"
-            self.add_argument("--" + key.replace("_", "-"), type=value.__class__,
-                              help=default_obj.__annotations__.get(key) + default_list,
-                              choices=default_obj.__dataclass_fields__[key].metadata.get("choices")
-                              )
+
+            original_class = origin_class_map[key]
+            option_choices = original_class.__dataclass_fields__[key].metadata.get("choices")
+            help = original_class.__annotations__.get(key)
+            self.add_argument(
+                "--" + key.replace("_", "-"), type=value.__class__,
+                help="{}{}".format(help, default_list),
+                choices=option_choices,
+                original_parser=class_to_groups[original_class]
+            )
 
     def add_argument(self, *args, **kwargs):
+        original_parser = kwargs.get("original_parser") or self.original_parser
+        if "original_parser" in kwargs:
+            kwargs.pop("original_parser")
+
         def modify_names(name):
             last_hyphen = -1
             for i, char in enumerate(name):
@@ -239,7 +270,7 @@ class DictionarySubParser(argparse._ArgumentGroup):
             original_action_class = original_action_input
         kwargs["action"] = group_action_factory(self.sub_namespace, original_action_class)
         kwargs["default"] = argparse.SUPPRESS
-        self.original_parser.add_argument(
+        original_parser.add_argument(
             *[modify_names(i) for i in args],
             **kwargs)
 
@@ -446,3 +477,13 @@ class SmartDefaultDict(UserDict):
 def set_default_attr(obj, attr, value):
     if not hasattr(obj, attr):
         setattr(obj, attr, value)
+
+
+def combine_sub_options(sub_classes_with_option, name="Options", extra=None):
+    if extra is None:
+        extra = {}
+    base_classes = tuple(getattr(i, "Options")
+                         for i in sub_classes_with_option.values()
+                         if hasattr(i, "Options")
+                         )
+    return dataclasses.dataclass(type(name, base_classes, extra))
