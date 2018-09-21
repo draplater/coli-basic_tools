@@ -1,13 +1,10 @@
 import argparse
-import gzip
 import pickle
 from collections import UserDict, OrderedDict
 from io import open
 import contextlib
 import functools
 import warnings
-from argparse import ArgumentParser
-from optparse import OptionParser
 
 import os
 import time
@@ -15,12 +12,16 @@ import time
 import sys
 
 from itertools import islice
+from typing import TypeVar, List, Dict
 
 import dataclasses
 import numpy as np
 from dataclasses import is_dataclass
+from wrapt import CallableObjectProxy
 
 from logger import logger
+
+T = TypeVar("T")
 
 
 def set_proc_name(newname):
@@ -290,26 +291,6 @@ def group_action_factory(group_name, original_action_class):
     return GroupAction
 
 
-def read_embedding(embedding_filename, encoding):
-    if embedding_filename.endswith(".gz"):
-        external_embedding_fp = gzip.open(embedding_filename, 'rb')
-    else:
-        external_embedding_fp = open(embedding_filename, 'rb')
-
-    def embedding_gen():
-        for line in external_embedding_fp:
-            fields = line.decode(encoding).strip().split(' ')
-            if len(fields) <= 2:
-                continue
-            token = fields[0]
-            vector = [float(i) for i in fields[1:]]
-            yield token, vector
-
-    external_embedding = list(embedding_gen())
-    external_embedding_fp.close()
-    return external_embedding
-
-
 def cache_result_to(file_name_func, enable=True):
     if not enable:
         return lambda func: func
@@ -479,13 +460,16 @@ def set_default_attr(obj, attr, value):
         setattr(obj, attr, value)
 
 
-def combine_sub_options(sub_classes_with_option, name="Options", extra=None):
+def combine_sub_options(
+        sub_classes_with_option: Dict[str, T],
+        name="Options",
+        extra=None):
     if extra is None:
         extra = {}
-    base_classes = tuple(getattr(i, "Options")
-                         for i in sub_classes_with_option.values()
-                         if hasattr(i, "Options")
-                         )
+    base_classes = tuple(set(getattr(i, "Options")
+                             for i in sub_classes_with_option.values()
+                             if hasattr(i, "Options")
+                             ))
     return dataclasses.dataclass(type(name, base_classes, extra))
 
 
@@ -514,3 +498,26 @@ def add_slots(cls):
     if qualname is not None:
         cls.__qualname__ = qualname
     return cls
+
+
+class NoPickle(CallableObjectProxy):
+    """
+    An ObjectProxy that make an unpicklable object picklable,
+    (but you will get `None` when restoring)
+    """
+
+    @classmethod
+    def return_none(cls):
+        return None
+
+    def __reduce__(self):
+        return self.return_none, ()
+
+
+class IdentityGetAttr(object):
+    """
+    create an object a such that a.xxx = "xxx", a.yyy = "yyy"
+    """
+
+    def __getattr__(self, item):
+        return item
