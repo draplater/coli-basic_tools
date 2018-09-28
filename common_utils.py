@@ -415,8 +415,12 @@ class Progbar(object):
                 info += ' - %ds' % (now - self.start)
             for k in self.unique_values:
                 if type(self.sum_values[k]) is list:
-                    info += ' - %s: %.4f' % (k,
-                                             self.sum_values[k][0] / max(1, self.sum_values[k][1]))
+                    if isinstance(self.sum_values[k][0], int):
+                        info += ' - %s: %d' % (k,
+                                                 self.sum_values[k][0] / max(1, self.sum_values[k][1]))
+                    else:
+                        info += ' - %s: %.4f' % (k,
+                                                 self.sum_values[k][0] / max(1, self.sum_values[k][1]))
                 else:
                     info += ' - %s: %s' % (k, self.sum_values[k])
 
@@ -434,8 +438,14 @@ class Progbar(object):
             if current >= self.target:
                 info = '%ds' % (now - self.start)
                 for k in self.unique_values:
-                    info += ' - %s: %.4f' % (k,
-                                             self.sum_values[k][0] / max(1, self.sum_values[k][1]))
+                    if isinstance(self.sum_values[k][0], int):
+                        info += ' - %s: %d' % (
+                            k,
+                            self.sum_values[k][0] / max(1, self.sum_values[k][1]))
+                    else:
+                        info += ' - %s: %.4f' % (
+                            k,
+                            self.sum_values[k][0] / max(1, self.sum_values[k][1]))
                 sys.stdout.write(info + "\n")
 
     def finish(self):
@@ -513,6 +523,9 @@ class NoPickle(CallableObjectProxy):
     def __reduce__(self):
         return self.return_none, ()
 
+    def __repr__(self):
+        return "(NoPickle): " + repr(self.__wrapped__)
+
 
 class IdentityGetAttr(object):
     """
@@ -521,3 +534,6 @@ class IdentityGetAttr(object):
 
     def __getattr__(self, item):
         return item
+
+
+def identity(arg): return arg
