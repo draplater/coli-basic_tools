@@ -217,16 +217,21 @@ class DictionarySubParser(argparse._ArgumentGroup):
                                               choices=choices.keys(),
                                               default=default_obj
                                               )
-        params_dict = dataclasses.asdict(default_obj)
         origin_class_map = dataclasses_trace_origin(default_obj.__class__)
         # docs
         class_to_groups = {i: original_parser.add_argument_group(title=i.__qualname__)
                            for i in set(origin_class_map.values())}
-        for key, value in params_dict.items():
+        for field in dataclasses.fields(default_obj):
+            key = field.name
+            value = getattr(default_obj, key)
             # TODO: resursive dataclasses
-            # if dataclasses.is_dataclass(value):
-            #     DictionarySubParser(self.sub_namespace + "." + key, self)
-            # else:
+            if dataclasses.is_dataclass(value):
+                sub_choices = field.metadata.get("choices")
+                if sub_choices is None:
+                    sub_choices = {"default": value}
+                DictionarySubParser(self.sub_namespace + "." + key, self,
+                                    choices=sub_choices)
+                continue
             default_list = " (default: {}".format(value)
             for choice_key, choice_dict in choices.items():
                 alt_value = getattr(choice_dict, key)
@@ -280,11 +285,19 @@ def group_action_factory(group_name, original_action_class):
     class GroupAction(argparse.Action):
         def __init__(self, option_strings, dest, **kwargs):
             assert dest.startswith(group_name + ".")
+            self.group_name = group_name
             dest = dest[len(group_name) + 1:]
             super(GroupAction, self).__init__(option_strings, dest, **kwargs)
             self.original_action_obj = original_action_class(option_strings, dest, **kwargs)
 
         def __call__(self, parser, namespace, values, option_string=None):
+            group_name = self.group_name
+            while True:
+                parts = group_name.split(".", 1)
+                if len(parts) == 1:
+                    break
+                sub_namespace_key, group_name = parts
+                namespace = getattr(namespace, sub_namespace_key)
             groupspace = getattr(namespace, group_name)
             self.original_action_obj(parser, groupspace, values, option_string)
 
