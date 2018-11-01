@@ -1,6 +1,7 @@
 import argparse
+import collections
 import pickle
-from collections import UserDict, OrderedDict
+from collections import UserDict, OrderedDict, Counter, _count_elements
 from io import open
 import contextlib
 import functools
@@ -430,7 +431,7 @@ class Progbar(object):
                 if type(self.sum_values[k]) is list:
                     if isinstance(self.sum_values[k][0], int):
                         info += ' - %s: %d' % (k,
-                                                 self.sum_values[k][0] / max(1, self.sum_values[k][1]))
+                                               self.sum_values[k][0] / max(1, self.sum_values[k][1]))
                     else:
                         info += ' - %s: %.4f' % (k,
                                                  self.sum_values[k][0] / max(1, self.sum_values[k][1]))
@@ -550,3 +551,43 @@ class IdentityGetAttr(object):
 
 
 def identity(arg): return arg
+
+
+class UserCounterBase(UserDict):
+    def __init__(*args, **kwds):
+        if not args:
+            raise TypeError("descriptor '__init__' of 'Counter' object "
+                            "needs an argument")
+        self, *args = args
+        if len(args) > 1:
+            raise TypeError('expected at most 1 arguments, got %d' % len(args))
+        super(UserCounterBase, self).__init__()
+        self.update(*args, **kwds)
+
+    def update(*args, **kwds):
+        if not args:
+            raise TypeError("descriptor 'update' of 'Counter' object "
+                            "needs an argument")
+        self, *args = args
+        if len(args) > 1:
+            raise TypeError('expected at most 1 arguments, got %d' % len(args))
+        iterable = args[0] if args else None
+        if iterable is not None:
+            if isinstance(iterable, collections.Mapping):
+                if self:
+                    self_get = self.get
+                    for elem, count in iterable.items():
+                        self[elem] = count + self_get(elem, 0)
+                else:
+                    super(UserCounterBase, self).update(iterable)  # fast path when counter is empty
+            else:
+                _count_elements(self, iterable)
+        if kwds:
+            self.update(kwds)
+
+
+UserCounter = type("UserCounter", (UserCounterBase,),
+                   {k: v for k, v in Counter.__dict__.items()
+                    if k not in {"__dict__", "__weakref__", "__reduce__", "__init__", "update"}}
+                   )
+UserCounter.__module__ = UserCounterBase.__module__
