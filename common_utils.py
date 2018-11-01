@@ -305,6 +305,34 @@ def group_action_factory(group_name, original_action_class):
     return GroupAction
 
 
+# can be enabled by setting common_utils.cache_keeper = some_dict
+cache_keeper = None
+
+
+def try_cache_keeper(key):
+    """
+    Store objects globally to speed up debugging
+    """
+    def wrapper(func):
+        @functools.wraps(func)
+        def wrapped(*args, **kwargs):
+            if cache_keeper is None:
+                return func(*args, **kwargs)
+            else:
+                result = cache_keeper.get(key)
+                if result is None:
+                    result = func(*args, **kwargs)
+                    cache_keeper[key] = result
+                    logger.info("Add into cache keeper: {}".format(key))
+                else:
+                    logger.info("Load from cache keeper: {}".format(key))
+                return result
+
+        return wrapped
+
+    return wrapper
+
+
 def cache_result_to(file_name_func, enable=True):
     if not enable:
         return lambda func: func
@@ -313,16 +341,22 @@ def cache_result_to(file_name_func, enable=True):
         @functools.wraps(func)
         def wrapped(*args, **kwargs):
             file_name = file_name_func(*args, **kwargs)
-            if os.path.exists(file_name):
+            if cache_keeper is not None and file_name in cache_keeper:
+                logger.info("Use cache keeper: {}".format(file_name))
+                ret = cache_keeper[file_name]
+            elif os.path.exists(file_name):
                 with open(file_name, "rb") as f:
                     logger.info("Use cached file: {}".format(file_name))
-                    return pickle.load(f)
+                    ret = pickle.load(f)
             else:
-                result = func(*args, **kwargs)
+                ret = func(*args, **kwargs)
                 with open(file_name, "wb") as f:
-                    pickle.dump(result, f)
+                    pickle.dump(ret, f)
                     logger.info("Cached file generated: {}".format(file_name))
-                return result
+
+            if cache_keeper is not None and file_name not in cache_keeper:
+                cache_keeper[file_name] = ret
+            return ret
 
         return wrapped
 
