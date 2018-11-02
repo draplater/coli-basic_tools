@@ -13,7 +13,7 @@ import time
 import sys
 
 from itertools import islice
-from typing import TypeVar, List, Dict
+from typing import TypeVar, Dict
 
 import dataclasses
 import numpy as np
@@ -59,7 +59,7 @@ def deprecated(func):
 
 @deprecated
 def parse_dict(parser, dic, prefix=()):
-    from training_scheduler import dict_to_commandline
+    from coli.parser_tools.training_scheduler import dict_to_commandline
     return parser.parse_args(dict_to_commandline(dic, prefix))
 
 
