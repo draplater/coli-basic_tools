@@ -20,7 +20,7 @@ import numpy as np
 from dataclasses import is_dataclass
 from wrapt import CallableObjectProxy
 
-from logger import logger
+from .logger import logger
 
 T = TypeVar("T")
 
