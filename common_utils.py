@@ -188,6 +188,15 @@ def dict_key_action_factory(choices):
     return DictKeyAction
 
 
+def bool_convert(input_bool):
+    if input_bool == "False":
+        return False
+    elif input_bool == "True":
+        return True
+    else:
+        raise Exception("Unknown bool value {}".format(input_bool))
+
+
 def dataclasses_trace_origin(klass, result_container=None):
     if result_container is None:
         result_container = OrderedDict()
@@ -244,7 +253,7 @@ class DictionarySubParser(argparse._ArgumentGroup):
             option_choices = original_class.__dataclass_fields__[key].metadata.get("choices")
             help = original_class.__annotations__.get(key)
             self.add_argument(
-                "--" + key.replace("_", "-"), type=value.__class__,
+                "--" + key.replace("_", "-"), type=value.__class__ if not isinstance(value, bool) else bool_convert,
                 help="{}{}".format(help, default_list),
                 choices=option_choices,
                 original_parser=class_to_groups[original_class]
