@@ -13,7 +13,7 @@ import time
 import sys
 
 from itertools import islice
-from typing import TypeVar, Dict
+from typing import TypeVar, Dict, Generic
 
 import dataclasses
 import numpy as np
@@ -634,3 +634,14 @@ UserCounter = type("UserCounter", (UserCounterBase,),
                     if k not in {"__dict__", "__weakref__", "__reduce__", "__init__", "update"}}
                    )
 UserCounter.__module__ = UserCounterBase.__module__
+
+
+class ValueContainer(Generic[T]):
+    def __init__(self, default: T):
+        self.value: T = default
+
+    def get(self) -> T:
+        return self.value
+
+    def set(self, value: T):
+        self.value = T
