@@ -21,6 +21,8 @@ from dataclasses import is_dataclass
 from wrapt import CallableObjectProxy
 
 from .logger import logger
+# noinspection PyUnresolvedReferences
+from .dataclass_argparse import DataClassArgParser as DictionarySubParser
 
 T = TypeVar("T")
 
@@ -177,141 +179,6 @@ class IdentityDict(object):
 
     def __getstate__(self):
         raise NotImplementedError("Cannot pickle this.")
-
-
-def dict_key_action_factory(choices):
-    class DictKeyAction(argparse.Action):
-        def __call__(self, parser, namespace, values, option_string=None):
-            # noinspection PyUnresolvedReferences
-            setattr(namespace, self.dest, dataclasses.replace(choices[values]))
-
-    return DictKeyAction
-
-
-def bool_convert(input_bool):
-    if input_bool == "False":
-        return False
-    elif input_bool == "True":
-        return True
-    else:
-        raise Exception("Unknown bool value {}".format(input_bool))
-
-
-def dataclasses_trace_origin(klass, result_container=None):
-    if result_container is None:
-        result_container = OrderedDict()
-    if not dataclasses.is_dataclass(klass):
-        return result_container
-    for var in klass.__dataclass_fields__:
-        result_container[var] = klass
-    for base in klass.__bases__:
-        dataclasses_trace_origin(base, result_container)
-    return result_container
-
-
-class DictionarySubParser(argparse._ArgumentGroup):
-    def __init__(self, sub_namespace, original_parser, choices=None,
-                 title=None,
-                 description=None,
-                 default_key="default"):
-        for i in choices.values():
-            assert is_dataclass(i)
-        super(DictionarySubParser, self).__init__(
-            original_parser, title=title, description=description)
-        self.sub_namespace = sub_namespace
-        self.original_parser = original_parser
-        default_obj = choices[default_key]
-        if choices is not None:
-            self.original_parser.add_argument("--" + self.sub_namespace,
-                                              action=dict_key_action_factory(choices),
-                                              choices=choices.keys(),
-                                              default=default_obj
-                                              )
-        origin_class_map = dataclasses_trace_origin(default_obj.__class__)
-        # docs
-        class_to_groups = {i: original_parser.add_argument_group(title=i.__qualname__)
-                           for i in set(origin_class_map.values())}
-        for field in dataclasses.fields(default_obj):
-            key = field.name
-            value = getattr(default_obj, key)
-            # TODO: resursive dataclasses
-            if dataclasses.is_dataclass(value):
-                sub_choices = field.metadata.get("choices")
-                if sub_choices is None:
-                    sub_choices = {"default": value}
-                DictionarySubParser(self.sub_namespace + "." + key, self,
-                                    choices=sub_choices)
-                continue
-            default_list = " (default: {}".format(value)
-            for choice_key, choice_dict in choices.items():
-                alt_value = getattr(choice_dict, key)
-                if alt_value != value:
-                    default_list += ", {}: {}".format(choice_key, alt_value)
-            default_list += ")"
-
-            original_class = origin_class_map[key]
-            option_choices = original_class.__dataclass_fields__[key].metadata.get("choices")
-            help = original_class.__annotations__.get(key)
-            self.add_argument(
-                "--" + key.replace("_", "-"), type=value.__class__ if not isinstance(value, bool) else bool_convert,
-                help="{}{}".format(help, default_list),
-                choices=option_choices,
-                original_parser=class_to_groups[original_class]
-            )
-
-    def add_argument(self, *args, **kwargs):
-        original_parser = kwargs.get("original_parser") or self.original_parser
-        if "original_parser" in kwargs:
-            kwargs.pop("original_parser")
-
-        def modify_names(name):
-            last_hyphen = -1
-            for i, char in enumerate(name):
-                if char == "-":
-                    last_hyphen = i
-                else:
-                    break
-            last_hyphen += 1
-            return name[:last_hyphen] + self.sub_namespace + "." + name[last_hyphen:]
-
-        if "dest" in kwargs:
-            kwargs["dest"] = self.sub_namespace + "." + kwargs["dest"]
-
-        original_action_input = kwargs.get("action")
-        if original_action_input is None or \
-                isinstance(original_action_input, (str, bytes)):
-            original_action_class = self._registry_get(
-                "action", original_action_input, original_action_input)
-        else:
-            original_action_class = original_action_input
-        kwargs["action"] = group_action_factory(self.sub_namespace, original_action_class)
-        kwargs["default"] = argparse.SUPPRESS
-        original_parser.add_argument(
-            *[modify_names(i) for i in args],
-            **kwargs)
-
-
-def group_action_factory(group_name, original_action_class):
-    class GroupAction(argparse.Action):
-        def __init__(self, option_strings, dest, **kwargs):
-            assert dest.startswith(group_name + ".")
-            self.group_name = group_name
-            dest = dest[len(group_name) + 1:]
-            super(GroupAction, self).__init__(option_strings, dest, **kwargs)
-            self.original_action_obj = original_action_class(option_strings, dest, **kwargs)
-
-        def __call__(self, parser, namespace, values, option_string=None):
-            group_name = self.group_name
-            while True:
-                parts = group_name.split(".", 1)
-                if len(parts) == 1:
-                    break
-                sub_namespace_key, group_name = parts
-                namespace = getattr(namespace, sub_namespace_key)
-            groupspace = getattr(namespace, group_name)
-            self.original_action_obj(parser, groupspace, values, option_string)
-
-    return GroupAction
 
 
 # can be enabled by setting common_utils.cache_keeper = some_dict
