@@ -1,6 +1,6 @@
 import argparse
 from collections import OrderedDict
-from typing import List, Any
+from typing import List, Any, Union
 
 import dataclasses
 from dataclasses import field, MISSING, dataclass
@@ -109,12 +109,16 @@ class DataClassArgParser(argparse._ArgumentGroup):
             annotation = original_class.__annotations__.get(key)
             if isinstance(annotation, str):
                 help_str = annotation
+            elif hasattr(annotation, "__args__") \
+                    and len(annotation.__args__) == 1:
+                # for generic type annotation like List[int]
+                arg_type = annotation.__args__[0]
+            elif getattr(annotation, "__origin__", None) == Union and \
+                    annotation.__args__[1] is type(None):
+                # for optional type annotation like Optional[int]
+                arg_type = annotation.__args__[0]
             elif isinstance(annotation, type):
                 arg_type = annotation
-            elif hasattr(annotation, "__origin__") and \
-                    hasattr(annotation.__origin__, "__mro__"):
-                # for generic type annotation like List[int]
-                arg_type = annotation.__origin__.__mro__[1]
             elif properties.type == MISSING:
                 raise Exception(
                     f"Cannot determine type for argument {key} "
