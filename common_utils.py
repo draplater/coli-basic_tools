@@ -227,7 +227,7 @@ def cache_result_to(file_name_func, enable=True):
             else:
                 ret = func(*args, **kwargs)
                 with open(file_name, "wb") as f:
-                    pickle.dump(ret, f)
+                    pickle.dump(ret, f, protocol=4)
                     logger.info("Cached file generated: {}".format(file_name))
 
             if cache_keeper is not None and file_name not in cache_keeper:
