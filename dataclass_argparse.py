@@ -1,4 +1,5 @@
 import argparse
+from abc import ABCMeta, abstractproperty
 from collections import OrderedDict
 from typing import List, Any, Union
 
@@ -276,3 +277,24 @@ def check_argparse_result(args, namespace=""):
             raise Exception(f"Parameter {namespace}{name} is required")
         elif value is AS_TRAINING:
             delattr(args, name)
+
+
+class BranchSelect(metaclass=ABCMeta):
+    branches = abstractproperty()
+
+    @dataclass
+    class Options(metaclass=ABCMeta):
+        type = abstractproperty()
+
+        def __repr__(self):
+            return f"{self.__class__.__name__}(type={self.type}," \
+                   f'{self.type}_options={getattr(self, self.type + "_options")})'
+
+    @classmethod
+    def get(cls, options: Options, **kwargs):
+        contextual_unit_class = cls.branches[options.type]
+        branch_kwargs = {}
+        branch_options = getattr(options, f"{options.type}_options")
+        branch_kwargs.update(branch_options.__dict__)
+        branch_kwargs.update(kwargs)
+        return contextual_unit_class(**branch_kwargs)
