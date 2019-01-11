@@ -151,6 +151,9 @@ class AttrDict(dict):
         except KeyError:
             raise AttributeError(name)
 
+    def __setattr__(self, key, value):
+        self[key] = value
+
     @property
     def __dict__(self):
         return self
