@@ -1,6 +1,7 @@
 import argparse
 from abc import ABCMeta, abstractproperty
 from collections import OrderedDict
+from pprint import pformat
 from typing import List, Any, Union
 
 import dataclasses
@@ -277,6 +278,27 @@ def check_argparse_result(args, namespace=""):
             raise Exception(f"Parameter {namespace}{name} is required")
         elif value is AS_TRAINING:
             delattr(args, name)
+
+
+def pretty_format(obj, indent=0):
+    if dataclasses.is_dataclass(obj):
+        ret = f'{obj.__class__.__qualname__}(\n'
+        field_values = []
+        for field in dataclasses.fields(obj):
+            value = getattr(obj, field.name)
+            if dataclasses.is_dataclass(value):
+                value_str = pretty_format(value, indent + 2)
+            else:
+                value_str = str(value)
+            field_values.append((field.name, value_str))
+        ret += ",\n".join(f'{" " * (indent + 2)}{key}={value}'
+                           for key, value in field_values)
+        ret += f'\n{" " * indent})'
+        return ret
+    elif isinstance(obj, argparse.Namespace):
+        return pformat(obj.__dict__)
+    else:
+        return pformat(obj)
 
 
 class BranchSelect(metaclass=ABCMeta):
