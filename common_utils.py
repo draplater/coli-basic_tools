@@ -515,3 +515,14 @@ class ValueContainer(Generic[T]):
 
     def set(self, value: T):
         self.value = T
+
+
+class NullContextManager(object):
+    def __init__(self, dummy_resource=None):
+        self.dummy_resource = dummy_resource
+
+    def __enter__(self):
+        return self.dummy_resource
+
+    def __exit__(self, *args):
+        pass
