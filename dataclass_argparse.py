@@ -315,8 +315,12 @@ class BranchSelect(metaclass=ABCMeta):
     @classmethod
     def get(cls, options: Options, **kwargs):
         contextual_unit_class = cls.branches[options.type]
+        if contextual_unit_class is None:
+            return None
         branch_kwargs = {}
         branch_options = getattr(options, f"{options.type}_options")
         branch_kwargs.update(branch_options.__dict__)
         branch_kwargs.update(kwargs)
         return contextual_unit_class(**branch_kwargs)
+
+
