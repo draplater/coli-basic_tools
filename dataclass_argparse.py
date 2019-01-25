@@ -1,11 +1,17 @@
 import argparse
+import inspect
 from abc import ABCMeta, abstractproperty
 from collections import OrderedDict
 from pprint import pformat
-from typing import List, Any, Union
+from typing import List, Any, Union, NewType
 
 import dataclasses
-from dataclasses import field, MISSING, dataclass
+from dataclasses import MISSING, dataclass
+from typeguard import check_type
+
+from coli.basic_tools.common_utils import NoPickle
+
+ExistFile = NewType("ExistFile", str)
 
 meta_key = "__ARGPARSE__"
 
@@ -24,7 +30,7 @@ def dataclasses_trace_origin(klass, result_container=None):
         result_container = OrderedDict()
     if not dataclasses.is_dataclass(klass):
         return result_container
-    for var in klass.__dataclass_fields__:
+    for var in dataclasses.fields(klass):
         result_container[var] = klass
     for base in klass.__bases__:
         dataclasses_trace_origin(base, result_container)
@@ -264,9 +270,9 @@ def argfield(default=REQUIRED, *, default_factory=MISSING,
                                          predict_time, predict_default)}
     if metadata is not None:
         metadata_.update(metadata)
-    return field(default=default, default_factory=default_factory,
-                 init=init, repr=repr, hash=hash, compare=compare,
-                 metadata=metadata_)
+    return dataclasses.field(default=default, default_factory=default_factory,
+                             init=init, repr=repr, hash=hash, compare=compare,
+                             metadata=metadata_)
 
 
 def check_argparse_result(args, namespace=""):
@@ -292,7 +298,7 @@ def pretty_format(obj, indent=0):
                 value_str = str(value)
             field_values.append((field.name, value_str))
         ret += ",\n".join(f'{" " * (indent + 2)}{key}={value}'
-                           for key, value in field_values)
+                          for key, value in field_values)
         ret += f'\n{" " * indent})'
         return ret
     elif isinstance(obj, argparse.Namespace):
@@ -310,7 +316,7 @@ class BranchSelect(metaclass=ABCMeta):
 
         def __repr__(self):
             return f"{self.__class__.__name__}(type={self.type}," \
-                   f'{self.type}_options={getattr(self, self.type + "_options")})'
+                f'{self.type}_options={getattr(self, self.type + "_options")})'
 
     @classmethod
     def get(cls, options: Options, **kwargs):
@@ -319,8 +325,48 @@ class BranchSelect(metaclass=ABCMeta):
             return None
         branch_kwargs = {}
         branch_options = getattr(options, f"{options.type}_options")
-        branch_kwargs.update(branch_options.__dict__)
+        assert dataclasses.is_dataclass(branch_options)
+        branch_kwargs.update({i.name: getattr(branch_options, i.name)
+                              for i in dataclasses.fields(branch_options)})
         branch_kwargs.update(kwargs)
         return contextual_unit_class(**branch_kwargs)
 
 
+FIELDS_TO_ORIGIN = "__fields_to_origin__"
+NAMES_TO_FIELDS = "__names_to_fields__"
+
+
+class OptionsBase(object):
+    def _get_original_fields(self):
+        assert dataclasses.is_dataclass(self)
+        fields_to_origin = getattr(self, FIELDS_TO_ORIGIN, None)
+        names_to_fields = getattr(self, NAMES_TO_FIELDS, None)
+        if fields_to_origin is None:
+            fields_to_origin = dataclasses_trace_origin(self.__class__)
+            setattr(self, FIELDS_TO_ORIGIN, NoPickle(fields_to_origin))
+        else:
+            fields_to_origin = fields_to_origin.__wrapped__
+        if names_to_fields is None:
+            names_to_fields = {i.name: i for i in fields_to_origin}
+            setattr(self, NAMES_TO_FIELDS, NoPickle(names_to_fields))
+        else:
+            names_to_fields = names_to_fields.__wrapped__
+        return fields_to_origin, names_to_fields
+
+    def __setattr__(self, key, value):
+        # ignore setattr from self
+        current_frame = inspect.currentframe()
+        if current_frame.f_back.f_locals.get("self") is self:
+            return super(OptionsBase, self).__setattr__(key, value)
+
+        fields_to_origin, names_to_fields = self._get_original_fields()
+        if key not in names_to_fields:
+            raise KeyError(f"{self.__class__.__qualname__} has no attribute \"{key}\"")
+        field = names_to_fields[key]
+        annotation = fields_to_origin[field].__annotations__.get(key)
+        argparse_metadata = field.metadata.get(meta_key)
+        if isinstance(argparse_metadata, ArgProperties) and \
+                argparse_metadata.type is not None and argparse_metadata.type is not MISSING:
+            annotation = argparse_metadata.type
+        check_type(key, value, annotation)
+        super(OptionsBase, self).__setattr__(key, value)

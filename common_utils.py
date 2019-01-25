@@ -17,12 +17,9 @@ from typing import TypeVar, Dict, Generic
 
 import dataclasses
 import numpy as np
-from dataclasses import is_dataclass
 from wrapt import CallableObjectProxy
 
 from .logger import logger
-# noinspection PyUnresolvedReferences
-from .dataclass_argparse import DataClassArgParser as DictionarySubParser
 
 T = TypeVar("T")
 
