@@ -2,14 +2,16 @@ import argparse
 import inspect
 from abc import ABCMeta, abstractproperty
 from collections import OrderedDict
+from operator import itemgetter
 from pprint import pformat
-from typing import List, Any, Union, NewType
+from typing import List, Any, Union, NewType, Optional, Iterable
 
 import dataclasses
 from dataclasses import MISSING, dataclass
 from typeguard import check_type
 
-from coli.basic_tools.common_utils import NoPickle
+from coli.basic_tools.common_utils import NoPickle, Singleton
+from coli.basic_tools.logger import default_logger
 
 ExistFile = NewType("ExistFile", str)
 
@@ -71,7 +73,8 @@ class DataClassArgParser(argparse._ArgumentGroup):
         if self.sub_namespace:
             self.sub_namespace += "."
 
-        origin_class_map = dataclasses_trace_origin(instance_or_class.__class__)
+        origin_class_map = {k.name: v for k, v in
+                            dataclasses_trace_origin(instance_or_class.__class__).items()}
         # docs
         class_to_groups = {i: original_parser.add_argument_group(title=i.__qualname__)
                            for i in set(origin_class_map.values())}
@@ -218,31 +221,44 @@ def group_action_factory(group_name, original_action_class):
 
 @dataclass
 class ArgProperties(object):
-    choices: List[Any]
+    choices: Optional[Iterable]
     required: bool
     type: Any
     help: str
-    metavar: str
+    metavar: Optional[str]
     nargs: Any
     train_time: bool  # whether this arg is used when training
     predict_time: bool  # whether this arg is used when predicting
     predict_default: Any  # use the same value as training if MISSING
 
 
-class Required(object):
+# used when argument is create with field(..) instead of argfield(..)
+default_arg_properties = ArgProperties(choices=None, required=False,
+                                       type=MISSING, help=MISSING, metavar=None,
+                                       nargs=None, train_time=True, predict_time=False,
+                                       predict_default=MISSING)
+
+
+class Required(metaclass=Singleton):
     def __str__(self):
         return "(Required)"
 
     def __repr__(self):
         return "(Required)"
 
+    def __deepcopy__(self, memo=None):
+        return self
 
-class AsTraining(object):
+
+class AsTraining(metaclass=Singleton):
     def __str__(self):
         return "(Use the same value as training)"
 
     def __repr__(self):
         return "(Use the same value as training)"
+
+    def __deepcopy__(self, memo=None):
+        return self
 
 
 REQUIRED = Required()
@@ -286,33 +302,130 @@ def check_argparse_result(args, namespace=""):
             delattr(args, name)
 
 
-def pretty_format(obj, indent=0):
-    if dataclasses.is_dataclass(obj):
-        ret = f'{obj.__class__.__qualname__}(\n'
-        field_values = []
-        for field in dataclasses.fields(obj):
-            value = getattr(obj, field.name)
+def check_options(op, is_training=True, namespace="options"):
+    assert dataclasses.is_dataclass(op)
+    if isinstance(op, OptionsBase):
+        # noinspection PyDataclass
+        for field in op.generate_valid_fields():
+            value = getattr(op, field.name)
+            full_name = f"{namespace}.{field.name}"
             if dataclasses.is_dataclass(value):
-                value_str = pretty_format(value, indent + 2)
+                check_options(value, is_training, namespace=full_name)
             else:
-                value_str = str(value)
-            field_values.append((field.name, value_str))
-        ret += ",\n".join(f'{" " * (indent + 2)}{key}={value}'
-                          for key, value in field_values)
-        ret += f'\n{" " * indent})'
-        return ret
+                argparse_metadata = field.metadata.get(meta_key) or default_arg_properties
+                if is_training and argparse_metadata.train_time and value is REQUIRED:
+                    raise ValueError(f"{full_name} is required when training")
+                if (not is_training) and argparse_metadata.predict_default and value is REQUIRED:
+                    raise ValueError(f"{full_name} is required when training")
+    else:
+        default_logger.warning(f"{op.__class__.__qualname__} should inherent OptionsBase")
+
+
+def pretty_format(obj, indent=0, is_training=True):
+    if dataclasses.is_dataclass(obj):
+        if not isinstance(obj, OptionsBase):
+            default_logger.warning(f"{obj.__class__.__qualname__} should inherent OptionsBase")
+            return pformat(obj.__dict__)
+        else:
+            return obj.pretty_format(indent, is_training)
     elif isinstance(obj, argparse.Namespace):
         return pformat(obj.__dict__)
     else:
         return pformat(obj)
 
 
+FIELDS_TO_ORIGIN = "__fields_to_origin__"
+NAMES_TO_FIELDS = "__names_to_fields__"
+
+
+class OptionsBase(object):
+    def generate_valid_fields(self, is_training=True):
+        # noinspection PyDataclass
+        for field in dataclasses.fields(self):
+            argparse_metadata = field.metadata.get(meta_key) or default_arg_properties
+            if is_training and argparse_metadata.train_time \
+                    or (not is_training) and argparse_metadata.predict_time:
+                yield field
+
+    def pretty_format(self, indent=0, is_training=True):
+        ret = f'{self.__class__.__qualname__}(\n'
+        field_values = []
+        for field in self.generate_valid_fields():
+            value = getattr(self, field.name)
+            if dataclasses.is_dataclass(value):
+                if not isinstance(value, OptionsBase):
+                    default_logger.warning(f"{value.__class__.__qualname__} should inherent OptionsBase")
+                    value_str = pformat(value.__dict__)
+                else:
+                    value_str = value.pretty_format(indent + 2, is_training)
+                field_values.append((field.name, value_str, True))
+            else:
+                value_str = repr(value)
+                field_values.append((field.name, value_str, False))
+        ret += ",\n".join(f'{" " * (indent + 2)}{key}={value}'
+                          for key, value, _ in sorted(field_values, key=itemgetter(2)))
+        ret += f'\n{" " * indent})'
+        return ret
+
+    def _get_original_fields(self):
+        assert dataclasses.is_dataclass(self)
+        fields_to_origin = getattr(self, FIELDS_TO_ORIGIN, None)
+        names_to_fields = getattr(self, NAMES_TO_FIELDS, None)
+        if fields_to_origin is None:
+            fields_to_origin = dataclasses_trace_origin(self.__class__)
+            setattr(self, FIELDS_TO_ORIGIN, NoPickle(fields_to_origin))
+        else:
+            fields_to_origin = fields_to_origin.__wrapped__
+        if names_to_fields is None:
+            names_to_fields = {i.name: i for i in fields_to_origin}
+            setattr(self, NAMES_TO_FIELDS, NoPickle(names_to_fields))
+        else:
+            names_to_fields = names_to_fields.__wrapped__
+        return fields_to_origin, names_to_fields
+
+    def check_key(self, key, value):
+        fields_to_origin, names_to_fields = self._get_original_fields()
+        if key not in names_to_fields:
+            raise KeyError(f"{self.__class__.__qualname__} has no attribute \"{key}\"")
+        field = names_to_fields[key]
+        annotation = fields_to_origin[field].__annotations__.get(key)
+        argparse_metadata = field.metadata.get(meta_key) or default_arg_properties
+        if argparse_metadata.type is not MISSING:
+            annotation = argparse_metadata.type
+        check_type(key, value, annotation)
+
+    def __setattr__(self, key, value):
+        # ignore setattr from self
+        current_frame = inspect.currentframe()
+        if current_frame.f_back.f_locals.get("self") is self:
+            return super(OptionsBase, self).__setattr__(key, value)
+
+        self.check_key(key, value)
+        super(OptionsBase, self).__setattr__(key, value)
+
+
 class BranchSelect(metaclass=ABCMeta):
     branches = abstractproperty()
 
     @dataclass
-    class Options(metaclass=ABCMeta):
+    class Options(OptionsBase, metaclass=ABCMeta):
         type = abstractproperty()
+
+        def generate_valid_fields(self, is_training=True):
+            for field in super().generate_valid_fields(is_training):
+                if field.name.endswith("_options") and field.name != self.type + "_options":
+                    continue
+                yield field
+
+        def __getattribute__(self, key):
+            # ignore getattribute from self
+            current_frame = inspect.currentframe()
+            if current_frame.f_back.f_locals.get("self") is self:
+                return super().__getattribute__(key)
+
+            if key.endswith("_options") and key != self.type + "_options":
+                raise KeyError(f'try to use {key} when type is "{self.type}"')
+            return super().__getattribute__(key)
 
         def __repr__(self):
             return f"{self.__class__.__name__}(type={self.type}," \
@@ -330,43 +443,3 @@ class BranchSelect(metaclass=ABCMeta):
                               for i in dataclasses.fields(branch_options)})
         branch_kwargs.update(kwargs)
         return contextual_unit_class(**branch_kwargs)
-
-
-FIELDS_TO_ORIGIN = "__fields_to_origin__"
-NAMES_TO_FIELDS = "__names_to_fields__"
-
-
-class OptionsBase(object):
-    def _get_original_fields(self):
-        assert dataclasses.is_dataclass(self)
-        fields_to_origin = getattr(self, FIELDS_TO_ORIGIN, None)
-        names_to_fields = getattr(self, NAMES_TO_FIELDS, None)
-        if fields_to_origin is None:
-            fields_to_origin = dataclasses_trace_origin(self.__class__)
-            setattr(self, FIELDS_TO_ORIGIN, NoPickle(fields_to_origin))
-        else:
-            fields_to_origin = fields_to_origin.__wrapped__
-        if names_to_fields is None:
-            names_to_fields = {i.name: i for i in fields_to_origin}
-            setattr(self, NAMES_TO_FIELDS, NoPickle(names_to_fields))
-        else:
-            names_to_fields = names_to_fields.__wrapped__
-        return fields_to_origin, names_to_fields
-
-    def __setattr__(self, key, value):
-        # ignore setattr from self
-        current_frame = inspect.currentframe()
-        if current_frame.f_back.f_locals.get("self") is self:
-            return super(OptionsBase, self).__setattr__(key, value)
-
-        fields_to_origin, names_to_fields = self._get_original_fields()
-        if key not in names_to_fields:
-            raise KeyError(f"{self.__class__.__qualname__} has no attribute \"{key}\"")
-        field = names_to_fields[key]
-        annotation = fields_to_origin[field].__annotations__.get(key)
-        argparse_metadata = field.metadata.get(meta_key)
-        if isinstance(argparse_metadata, ArgProperties) and \
-                argparse_metadata.type is not None and argparse_metadata.type is not MISSING:
-            annotation = argparse_metadata.type
-        check_type(key, value, annotation)
-        super(OptionsBase, self).__setattr__(key, value)

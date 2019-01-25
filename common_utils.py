@@ -189,6 +189,7 @@ def try_cache_keeper(key):
     """
     Store objects globally to speed up debugging
     """
+
     def wrapper(func):
         @functools.wraps(func)
         def wrapped(*args, **kwargs):
@@ -523,3 +524,17 @@ class NullContextManager(object):
 
     def __exit__(self, *args):
         pass
+
+
+class Singleton(type):
+    """Metaclass which implements the singleton pattern"""
+
+    _instances = {}
+
+    def __call__(self, *args, **kwargs):
+        if self not in self._instances:
+            self._instances[self] = super(Singleton, self).__call__(*args, **kwargs)
+        return self._instances[self]
+
+    def __copy__(cls, instance):
+        return instance
