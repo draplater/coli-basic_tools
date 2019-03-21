@@ -86,7 +86,12 @@ class DataClassArgParser(argparse._ArgumentGroup):
             if mode == "train" and properties and not properties.train_time:
                 continue
             if not isinstance(instance_or_class, type):
-                value = getattr(instance_or_class, key)
+                if isinstance(instance_or_class, OptionsBase):
+                    value = instance_or_class.get_value(key)
+                else:
+                    default_logger.warning(f"{self.sub_namespace} ({instance_or_class.__class__.__qualname__})"
+                                           f"is a dataclass but not OptionsBase.")
+                    value = getattr(instance_or_class, key)
             else:
                 value = field.default
             if mode == "predict" and properties:
@@ -101,7 +106,7 @@ class DataClassArgParser(argparse._ArgumentGroup):
                 if sub_choices is None:
                     sub_choices = {"default": value}
                 DataClassArgParser(self.sub_namespace + key, original_parser,
-                                   choices=sub_choices)
+                                   choices=sub_choices, mode=mode)
                 continue
 
             default_list = " (default: {}".format(value)
@@ -130,9 +135,11 @@ class DataClassArgParser(argparse._ArgumentGroup):
                 arg_type = annotation.__args__[0]
             elif isinstance(annotation, type):
                 arg_type = annotation
+            elif annotation is ExistFile:
+                arg_type = str
             elif properties.type == MISSING:
                 raise Exception(
-                    f"Cannot determine type for argument {key} "
+                    f"Cannot determine type for argument \"{key}\" "
                     f"when annotation is {annotation} ")
 
             if properties is not None:
@@ -394,6 +401,12 @@ class OptionsBase(object):
             annotation = argparse_metadata.type
         check_type(key, value, annotation)
 
+    def get_value(self, key):
+        """
+        get value without checking
+        """
+        return self.__getattribute__(key)
+
     def __setattr__(self, key, value):
         # ignore setattr from self
         current_frame = inspect.currentframe()
@@ -402,6 +415,10 @@ class OptionsBase(object):
 
         self.check_key(key, value)
         super(OptionsBase, self).__setattr__(key, value)
+
+    @classmethod
+    def get_default(cls):
+        return cls()
 
 
 class BranchSelect(metaclass=ABCMeta):
