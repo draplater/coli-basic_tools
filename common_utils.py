@@ -1,7 +1,7 @@
-import argparse
 import collections
 import pickle
-from collections import UserDict, OrderedDict, Counter, _count_elements
+import typing
+from collections import UserDict, Counter, _count_elements
 from io import open
 import contextlib
 import functools
@@ -497,10 +497,11 @@ class UserCounterBase(UserDict):
             self.update(kwds)
 
 
-UserCounter = type("UserCounter", (UserCounterBase,),
-                   {k: v for k, v in Counter.__dict__.items()
-                    if k not in {"__dict__", "__weakref__", "__reduce__", "__init__", "update"}}
-                   )
+UserCounter: typing.Type[typing.Counter] = type("UserCounter", (UserCounterBase,),
+                                                {k: v for k, v in Counter.__dict__.items()
+                                                 if k not in {"__dict__", "__weakref__", "__reduce__", "__init__",
+                                                              "update"}}
+                                                )
 UserCounter.__module__ = UserCounterBase.__module__
 
 
