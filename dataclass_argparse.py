@@ -397,6 +397,9 @@ class OptionsBase(object):
         field = names_to_fields[key]
         annotation = fields_to_origin[field].__annotations__.get(key)
         argparse_metadata = field.metadata.get(meta_key) or default_arg_properties
+        if argparse_metadata.choices is not None and value not in argparse_metadata.choices:
+            raise KeyError(f'Invalid value "{value}" for {self.__class__.__qualname__}.{key}. '
+                           f'Must chosen from {"{" + ",".join(argparse_metadata.choices) + "}"}')
         if argparse_metadata.type is not MISSING:
             annotation = argparse_metadata.type
         check_type(key, value, annotation)
