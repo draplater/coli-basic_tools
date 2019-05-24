@@ -1,5 +1,6 @@
 import collections
 import pickle
+import queue
 import typing
 from collections import UserDict, Counter, _count_elements
 from io import open
@@ -13,6 +14,7 @@ import time
 import sys
 
 from itertools import islice
+from threading import Thread
 from typing import TypeVar, Dict, Generic
 
 import dataclasses
@@ -542,3 +544,85 @@ class Singleton(type):
 
     def __copy__(cls, instance):
         return instance
+
+
+class RepeatableGenerator(object):
+    def __init__(self, generator_factory):
+        self.generator_factory = generator_factory
+
+    def __call__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        return self
+
+    def __iter__(self):
+        return iter(self.generator_factory(*self.args, **self.kwargs))
+
+
+def repeatable(generator):
+    return RepeatableGenerator(generator)
+
+
+def generate_to_queue(gen, args, kwargs, q):
+    try:
+        for item in gen(*args, **kwargs):
+            q.put(("item", item))
+    except Exception as e:
+        q.put(("exception", e))
+    q.put((StopIteration, None))
+
+
+def run_generator_in_thread(gen, *args, **kwargs):
+    q = queue.Queue(maxsize=1024)
+
+    thread = Thread(target=generate_to_queue, args=(gen, args, kwargs, q))
+    thread.start()
+    while True:
+        info, i = q.get()
+        if info == StopIteration:
+            break
+        elif info == "exception":
+            raise i
+        else:
+            assert info == "item"
+            print("qsize", q.qsize())
+            yield i
+
+
+def run_in_thread(gen):
+    @functools.wraps(gen)
+    def wrapped(*args, **kwargs):
+        yield from run_generator_in_thread(gen, *args, **kwargs)
+
+    return wrapped
+
+
+def run_generator_in_process(gen, *args, **kwargs):
+    import multiprocessing
+    from multiprocessing.managers import SyncManager
+    manager = SyncManager()
+    manager.start()
+    q = manager.Queue(maxsize=1024)
+
+    process = multiprocessing.Process(
+        target=generate_to_queue, args=(gen, args, kwargs, q))
+    process.start()
+    while True:
+        info, i = q.get()
+        if info == StopIteration:
+            break
+        elif info == "exception":
+            raise i
+        else:
+            assert info == "item"
+            print("qsize", q.qsize())
+            yield i
+    manager.shutdown()
+
+
+def run_in_process(gen):
+    @functools.wraps(gen)
+    def wrapped(*args, **kwargs):
+        yield from run_generator_in_process(gen, *args, **kwargs)
+
+    return wrapped
