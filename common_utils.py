@@ -448,6 +448,9 @@ class NoPickle(CallableObjectProxy):
     def __reduce__(self):
         return self.return_none, ()
 
+    def __reduce_ex__(self, version):
+        return self.return_none, ()
+
     def __repr__(self):
         return "(NoPickle): " + repr(self.__wrapped__)
 
