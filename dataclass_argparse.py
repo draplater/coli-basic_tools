@@ -62,7 +62,8 @@ class DataClassArgParser(argparse._ArgumentGroup):
         self.original_parser = original_parser
 
         instance_or_class = choices[default_key]
-        if sub_namespace:
+        # FIXME: consider the container itself
+        if sub_namespace and "." not in sub_namespace:
             self.original_parser.add_argument("--" + sub_namespace,
                                               action=dict_key_action_factory(choices),
                                               choices=choices.keys(),
@@ -79,12 +80,8 @@ class DataClassArgParser(argparse._ArgumentGroup):
         class_to_groups = {i: original_parser.add_argument_group(title=i.__qualname__)
                            for i in set(origin_class_map.values())}
         for field in dataclasses.fields(instance_or_class):
-            properties = field.metadata.get(meta_key)
+            properties = field.metadata.get(meta_key) or default_arg_properties
             key = field.name
-            if mode == "predict" and properties and not properties.predict_time:
-                continue
-            if mode == "train" and properties and not properties.train_time:
-                continue
             if not isinstance(instance_or_class, type):
                 if isinstance(instance_or_class, OptionsBase):
                     value = instance_or_class.get_value(key)
@@ -94,17 +91,20 @@ class DataClassArgParser(argparse._ArgumentGroup):
                     value = getattr(instance_or_class, key)
             else:
                 value = field.default
-            if mode == "predict" and properties:
+            train_value = value
+            if mode == "predict":
                 value = properties.predict_default
 
+            if mode == "predict" and not dataclasses.is_dataclass(train_value) and not properties.predict_time:
+                continue
+            if mode == "train" and not properties.train_time:
+                continue
+
             # solve nested dataclass
-            if dataclasses.is_dataclass(value):
-                if properties:
-                    sub_choices = properties.choices
-                else:
-                    sub_choices = field.metadata.get("choices")
-                if sub_choices is None:
-                    sub_choices = {"default": value}
+            if dataclasses.is_dataclass(train_value):
+                sub_choices = properties.choices or \
+                              field.metadata.get("choices") or \
+                              {"default": train_value}
                 DataClassArgParser(self.sub_namespace + key, original_parser,
                                    choices=sub_choices, mode=mode)
                 continue
@@ -117,12 +117,15 @@ class DataClassArgParser(argparse._ArgumentGroup):
             default_list += ")"
 
             original_class = origin_class_map[key]
-            option_choices = field.metadata.get("choices")
             arg_type = value.__class__
             help_str = None
 
             # get help or type from annotations
             annotation = original_class.__annotations__.get(key)
+            this_annotation = instance_or_class.__class__.__annotations__.get(key)
+            if this_annotation is not None and this_annotation is not Any:
+                annotation = this_annotation
+
             if isinstance(annotation, str):
                 help_str = annotation
             elif hasattr(annotation, "__args__") \
@@ -130,8 +133,10 @@ class DataClassArgParser(argparse._ArgumentGroup):
                 # for generic type annotation like List[int]
                 arg_type = annotation.__args__[0]
             elif getattr(annotation, "__origin__", None) == Union and \
-                    annotation.__args__[1] is type(None):
+                    annotation.__args__[1] is type(None) \
+                    and callable(annotation.__args__[0]):
                 # for optional type annotation like Optional[int]
+                # ignore ForwardRef
                 arg_type = annotation.__args__[0]
             elif isinstance(annotation, type):
                 arg_type = annotation
@@ -142,12 +147,11 @@ class DataClassArgParser(argparse._ArgumentGroup):
                     f"Cannot determine type for argument \"{key}\" "
                     f"when annotation is {annotation} ")
 
-            if properties is not None:
-                option_choices = properties.choices
-                if properties.help != MISSING:
-                    help_str = properties.help
-                if properties.type != MISSING:
-                    arg_type = properties.type
+            option_choices = properties.choices or field.metadata.get("choices")
+            if properties.help != MISSING:
+                help_str = properties.help
+            if properties.type != MISSING:
+                arg_type = properties.type
 
             if help_str is None:
                 help_str = arg_type
@@ -168,7 +172,7 @@ class DataClassArgParser(argparse._ArgumentGroup):
                     default=value if value is not REQUIRED else None,
                     required=value is REQUIRED,
                     choices=option_choices,
-                    nargs=properties.nargs if properties else None
+                    nargs=properties.nargs
                 )
 
     def add_argument(self, *args, **kwargs):
@@ -336,9 +340,31 @@ def pretty_format(obj, indent=0, is_training=True):
         else:
             return obj.pretty_format(indent, is_training)
     elif isinstance(obj, argparse.Namespace):
-        return pformat(obj.__dict__)
+        return "\n".join(f"{k}={pretty_format(v)}" for k, v in obj.__dict__.items())
     else:
         return pformat(obj)
+
+
+def merge_predict_time_options(train_options, predict_options, prefix=""):
+    if isinstance(train_options, OptionsBase):
+        valid_fields = {i.name for i in train_options.generate_valid_fields(False)}
+    else:
+        valid_fields = train_options.__dict__.keys()
+
+    for k in valid_fields:
+        if not hasattr(predict_options, k):
+            continue
+        v = getattr(predict_options, k)
+        if isinstance(v, AsTraining) or v is MISSING:
+            continue
+        if dataclasses.is_dataclass(v):
+            assert isinstance(v, OptionsBase)
+            merge_predict_time_options(getattr(train_options, k), v, prefix + k + ".")
+        else:
+            if hasattr(train_options, k):
+                setattr(train_options, k, v)
+            else:
+                default_logger.info(f"Redundant option {prefix}{k}")
 
 
 FIELDS_TO_ORIGIN = "__fields_to_origin__"
@@ -349,30 +375,41 @@ class OptionsBase(object):
     def generate_valid_fields(self, is_training=True):
         # noinspection PyDataclass
         for field in dataclasses.fields(self):
+            value = getattr(self, field.name)
             argparse_metadata = field.metadata.get(meta_key) or default_arg_properties
-            if is_training and argparse_metadata.train_time \
+            if isinstance(value, OptionsBase) or \
+                    is_training and argparse_metadata.train_time \
                     or (not is_training) and argparse_metadata.predict_time:
                 yield field
 
     def pretty_format(self, indent=0, is_training=True):
         ret = f'{self.__class__.__qualname__}(\n'
         field_values = []
-        for field in self.generate_valid_fields():
+        is_empty = True
+        for field in self.generate_valid_fields(is_training):
             value = getattr(self, field.name)
+            if value is MISSING:
+                continue
             if dataclasses.is_dataclass(value):
                 if not isinstance(value, OptionsBase):
                     default_logger.warning(f"{value.__class__.__qualname__} should inherent OptionsBase")
                     value_str = pformat(value.__dict__)
                 else:
                     value_str = value.pretty_format(indent + 2, is_training)
-                field_values.append((field.name, value_str, True))
+                if value_str:
+                    is_empty = False
+                    field_values.append((field.name, value_str, True))
             else:
+                is_empty = False
                 value_str = repr(value)
                 field_values.append((field.name, value_str, False))
-        ret += ",\n".join(f'{" " * (indent + 2)}{key}={value}'
-                          for key, value, _ in sorted(field_values, key=itemgetter(2)))
-        ret += f'\n{" " * indent})'
-        return ret
+        if is_empty:
+            return ""
+        else:
+            ret += ",\n".join(f'{" " * (indent + 2)}{key}={value}'
+                              for key, value, _ in sorted(field_values, key=itemgetter(2)))
+            ret += f'\n{" " * indent})'
+            return ret
 
     def _get_original_fields(self):
         assert dataclasses.is_dataclass(self)
@@ -423,6 +460,21 @@ class OptionsBase(object):
     def get_default(cls):
         return cls()
 
+    def to_predict_default(self):
+        fields_to_origin, names_to_fields = self._get_original_fields()
+        for key, field in names_to_fields.items():
+            properties = field.metadata.get(meta_key) or default_arg_properties
+            value = getattr(self, key)
+            if dataclasses.is_dataclass(value):
+                assert isinstance(value, OptionsBase)
+                value.to_predict_default()
+            else:
+                if not properties.predict_time:
+                    setattr(self, key, MISSING)
+                else:
+                    setattr(self, key, properties.predict_default)
+        return self
+
 
 class BranchSelect(metaclass=ABCMeta):
     branches = abstractproperty()
@@ -433,7 +485,8 @@ class BranchSelect(metaclass=ABCMeta):
 
         def generate_valid_fields(self, is_training=True):
             for field in super().generate_valid_fields(is_training):
-                if field.name.endswith("_options") and field.name != self.type + "_options":
+                if not isinstance(self.type, AsTraining) and self.type != MISSING and \
+                        field.name.endswith("_options") and field.name != self.type + "_options":
                     continue
                 yield field
 
@@ -443,7 +496,8 @@ class BranchSelect(metaclass=ABCMeta):
             if current_frame.f_back.f_locals.get("self") is self:
                 return super().__getattribute__(key)
 
-            if key.endswith("_options") and key != self.type + "_options":
+            if self.type is not MISSING and not isinstance(self.type, AsTraining) \
+                    and key.endswith("_options") and key != self.type + "_options":
                 raise KeyError(f'try to use {key} when type is "{self.type}"')
             return super().__getattribute__(key)
 
