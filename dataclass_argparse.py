@@ -439,7 +439,8 @@ class OptionsBase(object):
                            f'Must chosen from {"{" + ",".join(argparse_metadata.choices) + "}"}')
         if argparse_metadata.type is not MISSING:
             annotation = argparse_metadata.type
-        check_type(key, value, annotation)
+        if value is not REQUIRED:
+            check_type(key, value, annotation)
 
     def get_value(self, key):
         """
@@ -506,14 +507,18 @@ class BranchSelect(metaclass=ABCMeta):
                 f'{self.type}_options={getattr(self, self.type + "_options")})'
 
     @classmethod
+    def get_branch_options(cls, options: Options):
+        return getattr(options, f"{options.type}_options")
+
+    @classmethod
     def get(cls, options: Options, **kwargs):
-        contextual_unit_class = cls.branches[options.type]
-        if contextual_unit_class is None:
+        child_type = cls.branches[options.type]
+        if child_type is None:
             return None
         branch_kwargs = {}
-        branch_options = getattr(options, f"{options.type}_options")
+        branch_options = cls.get_branch_options(options)
         assert dataclasses.is_dataclass(branch_options)
         branch_kwargs.update({i.name: getattr(branch_options, i.name)
                               for i in dataclasses.fields(branch_options)})
         branch_kwargs.update(kwargs)
-        return contextual_unit_class(**branch_kwargs)
+        return child_type(**branch_kwargs)
