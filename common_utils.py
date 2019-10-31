@@ -631,3 +631,23 @@ def run_in_process(gen):
         yield from run_generator_in_process(gen, *args, **kwargs)
 
     return wrapped
+
+
+class WritersProxy(object):
+    def __init__(self, *writers):
+        self.writers = writers
+
+    def write(self, content):
+        for i in self.writers:
+            i.write(content)
+
+    def flush(self):
+        for i in self.writers:
+            i.flush()
+
+
+def screen_and_file(file_stream, screen_stream=sys.stdout):
+    if file_stream != sys.stderr:
+        return WritersProxy(file_stream, screen_stream)
+    return screen_stream
+
