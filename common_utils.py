@@ -246,6 +246,7 @@ def cache_result(file_name, enable=True):
     return cache_result_to(lambda *args, **kwargs: file_name, enable=enable)
 
 
+# TODO: use tqdm instead
 class Progbar(object):
     """Progbar class copied from keras (https://github.com/fchollet/keras/)
 
@@ -455,6 +456,10 @@ class NoPickle(CallableObjectProxy):
 
     def __repr__(self):
         return "(NoPickle): " + repr(self.__wrapped__)
+
+    def __deepcopy__(self, memo):
+        # TODO: is it correct?
+        return None
 
 
 class IdentityGetAttr(object):
