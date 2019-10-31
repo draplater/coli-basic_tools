@@ -102,9 +102,11 @@ class DataClassArgParser(argparse._ArgumentGroup):
 
             # solve nested dataclass
             if dataclasses.is_dataclass(train_value):
-                sub_choices = properties.choices or \
-                              field.metadata.get("choices") or \
-                              {"default": train_value}
+                # TODO: better sulution to get default subchoices
+                # sub_choices = properties.choices or \
+                #               field.metadata.get("choices") or \
+                #               {"default": train_value}
+                sub_choices = {"default": getattr(instance_or_class, key)}
                 DataClassArgParser(self.sub_namespace + key, original_parser,
                                    choices=sub_choices, mode=mode)
                 continue
@@ -260,6 +262,9 @@ class Required(metaclass=Singleton):
     def __deepcopy__(self, memo=None):
         return self
 
+    def __bool__(self):
+        return False
+
 
 class AsTraining(metaclass=Singleton):
     def __str__(self):
@@ -375,7 +380,11 @@ class OptionsBase(object):
     def generate_valid_fields(self, is_training=True):
         # noinspection PyDataclass
         for field in dataclasses.fields(self):
-            value = getattr(self, field.name)
+            try:
+                value = getattr(self, field.name)
+            except AttributeError:
+                # when the model is trained with old code, some options may not exist
+                continue
             argparse_metadata = field.metadata.get(meta_key) or default_arg_properties
             if isinstance(value, OptionsBase) or \
                     is_training and argparse_metadata.train_time \
@@ -486,7 +495,7 @@ class BranchSelect(metaclass=ABCMeta):
 
         def generate_valid_fields(self, is_training=True):
             for field in super().generate_valid_fields(is_training):
-                if not isinstance(self.type, AsTraining) and self.type != MISSING and \
+                if isinstance(self.type, str) and \
                         field.name.endswith("_options") and field.name != self.type + "_options":
                     continue
                 yield field
@@ -497,7 +506,7 @@ class BranchSelect(metaclass=ABCMeta):
             if current_frame.f_back.f_locals.get("self") is self:
                 return super().__getattribute__(key)
 
-            if self.type is not MISSING and not isinstance(self.type, AsTraining) \
+            if isinstance(self.type, str) \
                     and key.endswith("_options") and key != self.type + "_options":
                 raise KeyError(f'try to use {key} when type is "{self.type}"')
             return super().__getattribute__(key)
@@ -515,10 +524,15 @@ class BranchSelect(metaclass=ABCMeta):
         child_type = cls.branches[options.type]
         if child_type is None:
             return None
-        branch_kwargs = {}
         branch_options = cls.get_branch_options(options)
-        assert dataclasses.is_dataclass(branch_options)
-        branch_kwargs.update({i.name: getattr(branch_options, i.name)
-                              for i in dataclasses.fields(branch_options)})
-        branch_kwargs.update(kwargs)
-        return child_type(**branch_kwargs)
+
+        if hasattr(child_type, "from_options"):
+            return child_type.from_options(branch_options, **kwargs)
+        else:
+            # TODO: remove backward compatibility
+            branch_kwargs = {}
+            assert dataclasses.is_dataclass(branch_options)
+            branch_kwargs.update({i.name: getattr(branch_options, i.name)
+                                  for i in dataclasses.fields(branch_options)})
+            branch_kwargs.update(kwargs)
+            return child_type(**branch_kwargs)
